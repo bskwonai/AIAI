@@ -27,6 +27,12 @@ export OPENAI_API_KEY=sk-...
 ./mvnw spring-boot:run
 ```
 
+
+## 웹 콘솔(UI)
+- 브라우저에서 `http://localhost:8080/` 접속
+- 화면에서 Base URL, Keycloak Access Token 입력 후 저장
+- 워크스페이스/문서/챗봇 생성 및 채팅을 한 화면에서 수행
+
 ## API 요약
 - `POST /api/workspaces`
 - `GET /api/workspaces`

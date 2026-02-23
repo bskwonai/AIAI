@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AIAI Console</title>
+  <style>
+    :root { color-scheme: light; }
+    body { margin: 0; font-family: Arial, sans-serif; background: #f5f7fb; color: #1f2937; }
+    header { background: #111827; color: #fff; padding: 12px 20px; }
+    header h1 { margin: 0; font-size: 18px; }
+    .wrap { max-width: 1200px; margin: 16px auto; padding: 0 16px; }
+    .grid { display: grid; grid-template-columns: 360px 1fr; gap: 16px; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px; }
+    .card h2 { margin: 0 0 10px; font-size: 16px; }
+    .row { display: flex; gap: 8px; margin-bottom: 8px; }
+    input, select, textarea, button { font-size: 14px; }
+    input, select, textarea { width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 8px; }
+    textarea { resize: vertical; min-height: 70px; }
+    button { border: none; border-radius: 8px; padding: 8px 12px; background: #2563eb; color: #fff; cursor: pointer; }
+    button.secondary { background: #6b7280; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .list { max-height: 180px; overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; }
+    .item { padding: 8px; border-bottom: 1px solid #f1f5f9; cursor: pointer; }
+    .item:last-child { border-bottom: none; }
+    .item.active { background: #eff6ff; }
+    .chat-box { height: 420px; overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; background: #f9fafb; }
+    .msg { margin: 8px 0; padding: 8px; border-radius: 8px; max-width: 80%; white-space: pre-wrap; }
+    .msg.user { margin-left: auto; background: #dbeafe; }
+    .msg.bot { margin-right: auto; background: #e5e7eb; }
+    .muted { color: #6b7280; font-size: 12px; }
+    .error { color: #dc2626; font-size: 12px; min-height: 18px; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>AIAI 관리 콘솔 (HTML + JS)</h1>
+</header>
+<div class="wrap">
+  <div class="card" style="margin-bottom: 16px;">
+    <h2>1) 인증 설정</h2>
+    <div class="row">
+      <input id="baseUrl" placeholder="API Base URL (예: http://localhost:8080)" />
+    </div>
+    <div class="row">
+      <textarea id="token" placeholder="Keycloak Access Token (Bearer 제외)"></textarea>
+    </div>
+    <div class="row">
+      <button id="saveAuth">저장</button>
+      <button id="ping" class="secondary">워크스페이스 조회 테스트</button>
+    </div>
+    <div id="authStatus" class="muted"></div>
+    <div id="authError" class="error"></div>
+  </div>
+
+  <div class="grid">
+    <div>
+      <div class="card" style="margin-bottom: 16px;">
+        <h2>2) 워크스페이스</h2>
+        <div class="row">
+          <input id="workspaceName" placeholder="새 워크스페이스 이름" />
+          <button id="createWorkspace">생성</button>
+        </div>
+        <div class="row">
+          <button id="loadWorkspaces" class="secondary">목록 새로고침</button>
+        </div>
+        <div id="workspaceList" class="list"></div>
+        <div class="muted">선택된 워크스페이스: <span id="selectedWorkspace">없음</span></div>
+      </div>
+
+      <div class="card">
+        <h2>3) 챗봇 관리</h2>
+        <div class="row"><input id="chatbotName" placeholder="챗봇 이름" /></div>
+        <div class="row"><input id="chatbotModel" value="gpt-4o-mini" placeholder="모델명" /></div>
+        <div class="row"><textarea id="chatbotPrompt" placeholder="시스템 프롬프트"></textarea></div>
+        <div class="row">
+          <button id="createChatbot">챗봇 생성</button>
+          <button id="loadChatbots" class="secondary">목록</button>
+        </div>
+        <div id="chatbotList" class="list"></div>
+        <div class="muted">선택된 챗봇: <span id="selectedChatbot">없음</span></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card" style="margin-bottom: 16px;">
+        <h2>4) 지식 문서 관리</h2>
+        <div class="row"><input id="docTitle" placeholder="문서 제목" /></div>
+        <div class="row"><textarea id="docContent" placeholder="문서 내용 (임베딩 생성 대상)"></textarea></div>
+        <div class="row">
+          <button id="createDoc">문서 등록</button>
+          <button id="loadDocs" class="secondary">문서 목록</button>
+        </div>
+        <div id="docList" class="list"></div>
+      </div>
+
+      <div class="card">
+        <h2>5) 채팅</h2>
+        <div id="chatBox" class="chat-box"></div>
+        <div class="row" style="margin-top: 8px;">
+          <textarea id="chatInput" placeholder="질문을 입력하세요"></textarea>
+        </div>
+        <div class="row">
+          <button id="sendChat">전송</button>
+          <button id="newSession" class="secondary">새 세션</button>
+        </div>
+        <div class="muted">현재 세션 ID: <span id="sessionId">없음</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const state = {
+    baseUrl: localStorage.getItem('aiai.baseUrl') || 'http://localhost:8080',
+    token: localStorage.getItem('aiai.token') || '',
+    workspaceId: null,
+    chatbotId: null,
+    sessionId: null,
+    workspaces: [],
+    chatbots: [],
+    docs: []
+  };
+
+  const $ = (id) => document.getElementById(id);
+
+  function initAuthUI() {
+    $('baseUrl').value = state.baseUrl;
+    $('token').value = state.token;
+    $('authStatus').textContent = '저장된 설정을 불러왔습니다.';
+  }
+
+  function saveAuth() {
+    state.baseUrl = $('baseUrl').value.trim();
+    state.token = $('token').value.trim();
+    localStorage.setItem('aiai.baseUrl', state.baseUrl);
+    localStorage.setItem('aiai.token', state.token);
+    $('authStatus').textContent = '인증 설정이 저장되었습니다.';
+    $('authError').textContent = '';
+  }
+
+  async function api(path, options = {}) {
+    if (!state.baseUrl || !state.token) {
+      throw new Error('Base URL과 Token을 먼저 입력/저장하세요.');
+    }
+    const res = await fetch(`${state.baseUrl}${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${state.token}`,
+        ...(options.headers || {})
+      }
+    });
+
+    const text = await res.text();
+    const data = text ? JSON.parse(text) : null;
+
+    if (!res.ok) {
+      throw new Error(data?.message || `${res.status} ${res.statusText}`);
+    }
+    return data;
+  }
+
+  function renderList(targetId, items, onClick, activeId) {
+    const el = $(targetId);
+    el.innerHTML = '';
+    if (!items.length) {
+      el.innerHTML = '<div class="item muted">데이터가 없습니다.</div>';
+      return;
+    }
+    items.forEach(item => {
+      const div = document.createElement('div');
+      div.className = `item ${activeId === item.id ? 'active' : ''}`;
+      div.textContent = `#${item.id} ${item.name || item.title} (${item.model || 'document'})`;
+      div.onclick = () => onClick(item);
+      el.appendChild(div);
+    });
+  }
+
+  function appendChat(role, message) {
+    const box = $('chatBox');
+    const div = document.createElement('div');
+    div.className = `msg ${role === 'user' ? 'user' : 'bot'}`;
+    div.textContent = message;
+    box.appendChild(div);
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function onSelectWorkspace(w) {
+    state.workspaceId = w.id;
+    $('selectedWorkspace').textContent = `#${w.id} ${w.name}`;
+    renderList('workspaceList', state.workspaces, onSelectWorkspace, state.workspaceId);
+    loadDocs().catch(handleError);
+    loadChatbots().catch(handleError);
+  }
+
+  async function loadWorkspaces() {
+    state.workspaces = await api('/api/workspaces');
+    renderList('workspaceList', state.workspaces, onSelectWorkspace, state.workspaceId);
+  }
+
+  async function createWorkspace() {
+    const name = $('workspaceName').value.trim();
+    if (!name) return;
+    await api('/api/workspaces', { method: 'POST', body: JSON.stringify({ name }) });
+    $('workspaceName').value = '';
+    await loadWorkspaces();
+  }
+
+  async function loadDocs() {
+    if (!state.workspaceId) throw new Error('워크스페이스를 먼저 선택하세요.');
+    state.docs = await api(`/api/workspaces/${state.workspaceId}/documents`);
+    renderList('docList', state.docs, () => {}, null);
+  }
+
+  async function createDoc() {
+    if (!state.workspaceId) throw new Error('워크스페이스를 먼저 선택하세요.');
+    const title = $('docTitle').value.trim();
+    const content = $('docContent').value.trim();
+    if (!title || !content) return;
+    await api(`/api/workspaces/${state.workspaceId}/documents`, {
+      method: 'POST',
+      body: JSON.stringify({ title, content })
+    });
+    $('docTitle').value = '';
+    $('docContent').value = '';
+    await loadDocs();
+  }
+
+  async function loadChatbots() {
+    if (!state.workspaceId) throw new Error('워크스페이스를 먼저 선택하세요.');
+    state.chatbots = await api(`/api/workspaces/${state.workspaceId}/chatbots`);
+    const onSelect = (c) => {
+      state.chatbotId = c.id;
+      $('selectedChatbot').textContent = `#${c.id} ${c.name}`;
+      renderList('chatbotList', state.chatbots, onSelect, state.chatbotId);
+    };
+    renderList('chatbotList', state.chatbots, onSelect, state.chatbotId);
+  }
+
+  async function createChatbot() {
+    if (!state.workspaceId) throw new Error('워크스페이스를 먼저 선택하세요.');
+    const name = $('chatbotName').value.trim();
+    const model = $('chatbotModel').value.trim();
+    const systemPrompt = $('chatbotPrompt').value.trim();
+    if (!name || !model || !systemPrompt) return;
+
+    await api(`/api/workspaces/${state.workspaceId}/chatbots`, {
+      method: 'POST',
+      body: JSON.stringify({ name, model, systemPrompt })
+    });
+
+    $('chatbotName').value = '';
+    $('chatbotPrompt').value = '';
+    await loadChatbots();
+  }
+
+  async function sendChat() {
+    if (!state.chatbotId) throw new Error('챗봇을 먼저 선택하세요.');
+    const message = $('chatInput').value.trim();
+    if (!message) return;
+
+    appendChat('user', message);
+    $('chatInput').value = '';
+
+    const res = await api('/api/chats', {
+      method: 'POST',
+      body: JSON.stringify({
+        chatbotId: state.chatbotId,
+        sessionId: state.sessionId,
+        message
+      })
+    });
+
+    state.sessionId = res.sessionId;
+    $('sessionId').textContent = String(state.sessionId);
+    appendChat('bot', res.answer);
+  }
+
+  function resetSession() {
+    state.sessionId = null;
+    $('sessionId').textContent = '없음';
+    $('chatBox').innerHTML = '';
+  }
+
+  function handleError(e) {
+    $('authError').textContent = e.message || String(e);
+  }
+
+  $('saveAuth').onclick = () => { try { saveAuth(); } catch (e) { handleError(e); } };
+  $('ping').onclick = () => loadWorkspaces().catch(handleError);
+  $('loadWorkspaces').onclick = () => loadWorkspaces().catch(handleError);
+  $('createWorkspace').onclick = () => createWorkspace().catch(handleError);
+  $('loadDocs').onclick = () => loadDocs().catch(handleError);
+  $('createDoc').onclick = () => createDoc().catch(handleError);
+  $('loadChatbots').onclick = () => loadChatbots().catch(handleError);
+  $('createChatbot').onclick = () => createChatbot().catch(handleError);
+  $('sendChat').onclick = () => sendChat().catch(handleError);
+  $('newSession').onclick = () => resetSession();
+
+  initAuthUI();
+</script>
+</body>
+</html>
